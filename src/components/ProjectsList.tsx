@@ -1,157 +1,131 @@
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Globe, Github, Calendar, Trash2, ExternalLink } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { Trash2, Eye, Calendar, Link, Github } from 'lucide-react';
+import { getAllProjects, deleteProject, type Project } from '@/lib/api';
+import { ProjectDetails } from './ProjectDetails';
 
-interface Project {
-  id: number;
-  projectName: string;
-  apiKey: string;
-  githubUrl?: string;  
-  scrapeUrl?: string;
-  functionMapCount: number;
-  createdAt: string;
-}
-
-interface ProjectsListProps {
-  onProjectSelect: (projectId: number) => void;
-  refreshTrigger: number;
-}
-
-const ProjectsList: React.FC<ProjectsListProps> = ({ onProjectSelect, refreshTrigger }) => {
+export const ProjectsList = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
-  const { toast } = useToast();
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
-  const fetchProjects = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/projects');
-      const data = await response.json();
-      
-      if (data.success) {
-        setProjects(data.projects);
-      } else {
-        throw new Error(data.error);
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to fetch projects",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+  const loadProjects = () => {
+    setLoading(true);
+    const result = getAllProjects();
+    
+    if (result.success && result.data) {
+      setProjects(result.data);
+    } else {
+      console.error('Failed to load projects:', result.error);
     }
+    setLoading(false);
   };
 
   useEffect(() => {
-    fetchProjects();
-  }, [refreshTrigger]);
+    loadProjects();
+  }, []);
 
-  const handleDelete = async (projectId: number, projectName: string) => {
-    if (!confirm(`Are you sure you want to delete "${projectName}"?`)) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/projects/${projectId}`, {
-        method: 'DELETE'
-      });
+  const handleDelete = (projectId: number) => {
+    if (confirm('Are you sure you want to delete this project?')) {
+      const result = deleteProject(projectId);
       
-      const data = await response.json();
-      
-      if (data.success) {
-        toast({
-          title: "Project Deleted",
-          description: "Project has been successfully deleted",
-        });
-        fetchProjects();
+      if (result.success) {
+        setProjects(projects.filter(p => p.id !== projectId));
       } else {
-        throw new Error(data.error);
+        console.error('Failed to delete project:', result.error);
       }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to delete project",
-        variant: "destructive",
-      });
     }
   };
 
+  const handleView = (project: Project) => {
+    setSelectedProject(project);
+  };
+
+  const handleBack = () => {
+    setSelectedProject(null);
+  };
+
+  if (selectedProject) {
+    return <ProjectDetails project={selectedProject} onBack={handleBack} />;
+  }
+
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Your Projects</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8">Loading projects...</div>
+      <Card className="bg-white/10 backdrop-blur-lg border-white/20">
+        <CardContent className="p-8 text-center">
+          <div className="text-gray-300">Loading projects...</div>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card>
+    <Card className="bg-white/10 backdrop-blur-lg border-white/20">
       <CardHeader>
-        <CardTitle>Your Projects</CardTitle>
-        <CardDescription>
-          Manage your analyzed projects and integration scripts
-        </CardDescription>
+        <CardTitle className="text-white">Your Learning Projects</CardTitle>
       </CardHeader>
       <CardContent>
         {projects.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            No projects yet. Create your first project above!
+          <div className="text-center py-8 text-gray-300">
+            No projects created yet. Create your first project above!
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {projects.map((project) => (
-              <div
-                key={project.id}
-                className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="font-semibold">{project.projectName}</h3>
-                    {project.githubUrl ? (
-                      <Github className="w-4 h-4 text-muted-foreground" />
-                    ) : (
-                      <Globe className="w-4 h-4 text-muted-foreground" />
-                    )}
+              <Card key={project.id} className="bg-white/5 border-white/10 hover:bg-white/10 transition-colors">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <CardTitle className="text-white text-lg truncate">
+                      {project.projectName}
+                    </CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(project.id)}
+                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {new Date(project.createdAt).toLocaleDateString()}
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm text-gray-300">
+                    <Calendar className="h-4 w-4" />
+                    {new Date(project.createdAt).toLocaleDateString()}
+                  </div>
+                  
+                  {project.githubUrl && (
+                    <div className="flex items-center gap-2 text-sm text-gray-300">
+                      <Github className="h-4 w-4" />
+                      <span className="truncate">GitHub Repository</span>
                     </div>
-                    <Badge variant="secondary">
-                      {project.functionMapCount} elements
+                  )}
+                  
+                  {project.scrapeUrl && (
+                    <div className="flex items-center gap-2 text-sm text-gray-300">
+                      <Link className="h-4 w-4" />
+                      <span className="truncate">Website Analysis</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center justify-between">
+                    <Badge variant="secondary" className="bg-blue-500/20 text-blue-300">
+                      {Object.keys(project.functionMap).length} elements
                     </Badge>
+                    <Button
+                      size="sm"
+                      onClick={() => handleView(project)}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      View
+                    </Button>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onProjectSelect(project.id)}
-                  >
-                    <ExternalLink className="w-4 h-4 mr-1" />
-                    View Details
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleDelete(project.id, project.projectName)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         )}
@@ -159,5 +133,3 @@ const ProjectsList: React.FC<ProjectsListProps> = ({ onProjectSelect, refreshTri
     </Card>
   );
 };
-
-export default ProjectsList;

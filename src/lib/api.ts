@@ -1,42 +1,172 @@
 
-import { NextRequest } from 'next/server';
-import { dbOperations } from '@/lib/database';
+import { dbOperations } from './database';
+import { analyzeProject } from './analysis-service';
+import crypto from 'crypto';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ apiKey: string }> }
-) {
+export interface Project {
+  id: number;
+  projectName: string;
+  apiKey: string;
+  githubUrl?: string;
+  scrapeUrl?: string;
+  functionMap: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateProjectRequest {
+  projectName: string;
+  githubUrl?: string;
+  scrapeUrl?: string;
+}
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+// Projects API
+export const createProject = async (request: CreateProjectRequest): Promise<ApiResponse<Project>> => {
   try {
-    const { apiKey } = await params;
+    const { projectName, scrapeUrl, githubUrl } = request;
+
+    if (!projectName) {
+      return { success: false, error: 'Project name is required' };
+    }
+
+    if (!scrapeUrl && !githubUrl) {
+      return { success: false, error: 'Either scrapeUrl or githubUrl is required' };
+    }
+
+    // Generate unique API key
+    const apiKey = 'learn_' + crypto.randomBytes(16).toString('hex');
+
+    // Analyze the project
+    const analysisResult = await analyzeProject(projectName, githubUrl, scrapeUrl);
+
+    if (!analysisResult.success) {
+      return { success: false, error: analysisResult.error };
+    }
+
+    // Save to database
+    const projectId = dbOperations.createProject({
+      projectName,
+      apiKey,
+      githubUrl,
+      scrapeUrl,
+      functionMap: analysisResult.functionMap
+    });
+
+    // Log activity
+    dbOperations.logActivity(projectId as number, 'Project created');
+
+    const project = dbOperations.getProjectById(projectId as number);
+
+    return {
+      success: true,
+      data: {
+        id: project.id,
+        projectName: project.project_name,
+        apiKey: project.api_key,
+        githubUrl: project.github_url,
+        scrapeUrl: project.scrape_url,
+        functionMap: project.function_map,
+        createdAt: project.created_at,
+        updatedAt: project.updated_at
+      }
+    };
+
+  } catch (error) {
+    console.error('Project creation error:', error);
+    return { success: false, error: 'Failed to create project' };
+  }
+};
+
+export const getAllProjects = (): ApiResponse<Project[]> => {
+  try {
+    const projects = dbOperations.getAllProjects();
     
+    return {
+      success: true,
+      data: projects.map(project => ({
+        id: project.id,
+        projectName: project.project_name,
+        apiKey: project.api_key,
+        githubUrl: project.github_url,
+        scrapeUrl: project.scrape_url,
+        functionMap: project.function_map,
+        createdAt: project.created_at,
+        updatedAt: project.updated_at
+      }))
+    };
+  } catch (error) {
+    console.error('Failed to fetch projects:', error);
+    return { success: false, error: 'Failed to fetch projects' };
+  }
+};
+
+export const getProjectById = (id: number): ApiResponse<Project> => {
+  try {
+    const project = dbOperations.getProjectById(id);
+
+    if (!project) {
+      return { success: false, error: 'Project not found' };
+    }
+
+    return {
+      success: true,
+      data: {
+        id: project.id,
+        projectName: project.project_name,
+        apiKey: project.api_key,
+        githubUrl: project.github_url,
+        scrapeUrl: project.scrape_url,
+        functionMap: project.function_map,
+        createdAt: project.created_at,
+        updatedAt: project.updated_at
+      }
+    };
+
+  } catch (error) {
+    console.error('Failed to fetch project:', error);
+    return { success: false, error: 'Failed to fetch project' };
+  }
+};
+
+export const deleteProject = (id: number): ApiResponse<{ message: string }> => {
+  try {
+    const result = dbOperations.deleteProject(id);
+
+    if (result.changes === 0) {
+      return { success: false, error: 'Project not found' };
+    }
+
+    return { success: true, data: { message: 'Project deleted successfully' } };
+
+  } catch (error) {
+    console.error('Failed to delete project:', error);
+    return { success: false, error: 'Failed to delete project' };
+  }
+};
+
+// Plugin API
+export const generatePlugin = (apiKey: string): string => {
+  try {
     const project = dbOperations.getProjectByApiKey(apiKey);
 
     if (!project) {
-      return new Response('// Plugin not found', {
-        status: 404,
-        headers: { 'Content-Type': 'application/javascript' }
-      });
+      return '// Plugin not found';
     }
 
     // Generate the plugin JavaScript with embedded function map
-    const pluginCode = generatePluginCode(project.function_map);
-
-    return new Response(pluginCode, {
-      headers: {
-        'Content-Type': 'application/javascript',
-        'Cache-Control': 'public, max-age=3600',
-        'Access-Control-Allow-Origin': '*'
-      }
-    });
+    return generatePluginCode(project.function_map);
 
   } catch (error) {
     console.error('Failed to generate plugin:', error);
-    return new Response('// Plugin generation failed', {
-      status: 500,
-      headers: { 'Content-Type': 'application/javascript' }
-    });
+    return '// Plugin generation failed';
   }
-}
+};
 
 const generatePluginCode = (functionMap: Record<string, string>): string => {
   return `
@@ -300,4 +430,25 @@ const generatePluginCode = (functionMap: Record<string, string>): string => {
   }
 })();
 `;
+};
+
+// Activity API
+export const getActivity = (): ApiResponse<any[]> => {
+  try {
+    const activities = dbOperations.getActivity();
+    
+    return {
+      success: true,
+      data: activities.map(activity => ({
+        id: activity.id,
+        projectId: activity.project_id,
+        projectName: activity.project_name,
+        action: activity.action,
+        timestamp: activity.timestamp
+      }))
+    };
+  } catch (error) {
+    console.error('Failed to fetch activity:', error);
+    return { success: false, error: 'Failed to fetch activity' };
+  }
 };

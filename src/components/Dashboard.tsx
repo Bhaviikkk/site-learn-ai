@@ -3,250 +3,202 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Globe, Github, Brain, Sparkles, ArrowRight, Loader2 } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-import ProjectsList from './ProjectsList';
-import ProjectDetails from './ProjectDetails';
+import { Loader2, Github, Globe, Sparkles } from 'lucide-react';
+import { createProject } from '@/lib/api';
+import { ProjectsList } from './ProjectsList';
 
-const Dashboard = () => {
-  const [urlProjectName, setUrlProjectName] = useState('');
-  const [scrapeUrl, setScrapeUrl] = useState('');
-  const [githubProjectName, setGithubProjectName] = useState('');
+export const Dashboard = () => {
+  const [projectName, setProjectName] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const { toast } = useToast();
+  const [scrapeUrl, setScrapeUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const analyzeProject = async (type: 'url' | 'github') => {
-    setIsAnalyzing(true);
-    setError(null);
-    
+  const handleSubmit = async (type: 'github' | 'url') => {
+    if (!projectName.trim()) {
+      setError('Project name is required');
+      return;
+    }
+
+    if (type === 'github' && !githubUrl.trim()) {
+      setError('GitHub URL is required');
+      return;
+    }
+
+    if (type === 'url' && !scrapeUrl.trim()) {
+      setError('Website URL is required');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setSuccess('');
+
     try {
-      const payload = type === 'url' 
-        ? { projectName: urlProjectName, scrapeUrl }
-        : { projectName: githubProjectName, githubUrl };
-
-      const response = await fetch('/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+      const result = await createProject({
+        projectName: projectName.trim(),
+        githubUrl: type === 'github' ? githubUrl.trim() : undefined,
+        scrapeUrl: type === 'url' ? scrapeUrl.trim() : undefined
       });
 
-      const data = await response.json();
-
-      if (data.success) {
-        toast({
-          title: "Analysis Complete!",
-          description: `Project "${data.project.projectName}" has been successfully analyzed.`,
-        });
-        
-        // Clear form
-        if (type === 'url') {
-          setUrlProjectName('');
-          setScrapeUrl('');
-        } else {
-          setGithubProjectName('');
-          setGithubUrl('');
-        }
-        
-        // Refresh projects list
-        setRefreshTrigger(prev => prev + 1);
+      if (result.success && result.data) {
+        setSuccess(`Project "${result.data.projectName}" created successfully!`);
+        setProjectName('');
+        setGithubUrl('');
+        setScrapeUrl('');
+        setRefreshKey(prev => prev + 1); // Trigger projects list refresh
       } else {
-        throw new Error(data.error || 'Analysis failed');
+        setError(result.error || 'Failed to create project');
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Analysis failed';
-      setError(errorMessage);
-      toast({
-        title: "Analysis Failed",
-        description: errorMessage,
-        variant: "destructive",
-      });
+    } catch (err) {
+      setError('An unexpected error occurred');
+      console.error('Project creation error:', err);
     } finally {
-      setIsAnalyzing(false);
+      setLoading(false);
     }
   };
 
-  if (selectedProjectId) {
-    return (
-      <div className="min-h-screen bg-background">
-        <div className="max-w-6xl mx-auto px-4 py-12 sm:px-6 lg:px-8">
-          <ProjectDetails 
-            projectId={selectedProjectId} 
-            onBack={() => setSelectedProjectId(null)} 
-          />
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-background">
-      {/* Hero Section */}
-      <div className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-hero-gradient opacity-10"></div>
-        <div className="relative max-w-7xl mx-auto px-4 py-16 sm:px-6 lg:px-8">
-          <div className="text-center animate-fade-in">
-            <div className="flex items-center justify-center mb-6">
-              <Brain className="w-12 h-12 text-hero mr-4" />
-              <Sparkles className="w-8 h-8 text-hero-accent animate-pulse-glow" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
+      <div className="mx-auto max-w-7xl space-y-8">
+        {/* Header */}
+        <div className="text-center py-12">
+          <div className="inline-flex items-center gap-3 mb-6">
+            <div className="p-3 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl">
+              <Sparkles className="h-8 w-8 text-white" />
             </div>
-            <h1 className="hero-text mb-6">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
               AI Learning Service
             </h1>
-            <p className="hero-subtitle max-w-3xl mx-auto">
-              Transform any website into an interactive learning experience. 
-              Our AI analyzes your content and creates intelligent explanations for every element.
-            </p>
           </div>
+          <p className="text-xl text-gray-300 max-w-2xl mx-auto">
+            Transform any website or codebase into an interactive learning experience with AI-powered explanations
+          </p>
         </div>
-      </div>
 
-      {/* Main Dashboard */}
-      <div className="max-w-6xl mx-auto px-4 py-12 sm:px-6 lg:px-8 space-y-12">
-        {/* Create New Project */}
-        <Tabs defaultValue="url" className="space-y-8">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold mb-4">Create New Project</h2>
-            <TabsList className="grid w-full max-w-md mx-auto grid-cols-2">
-              <TabsTrigger value="url" className="flex items-center gap-2">
-                <Globe className="w-4 h-4" />
-                Website URL
-              </TabsTrigger>
-              <TabsTrigger value="github" className="flex items-center gap-2">
-                <Github className="w-4 h-4" />
-                GitHub Repo
-              </TabsTrigger>
-            </TabsList>
-          </div>
+        {/* Create Project Section */}
+        <Card className="bg-white/10 backdrop-blur-lg border-white/20">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              Create New Learning Project
+            </CardTitle>
+            <CardDescription className="text-gray-300">
+              Analyze a website or GitHub repository to create interactive learning content
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {error && (
+              <Alert className="mb-6 bg-red-500/10 border-red-500/20">
+                <AlertDescription className="text-red-200">{error}</AlertDescription>
+              </Alert>
+            )}
+            
+            {success && (
+              <Alert className="mb-6 bg-green-500/10 border-green-500/20">
+                <AlertDescription className="text-green-200">{success}</AlertDescription>
+              </Alert>
+            )}
 
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="projectName" className="text-white">Project Name</Label>
+                <Input
+                  id="projectName"
+                  placeholder="My Learning Project"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
+                  disabled={loading}
+                />
+              </div>
 
-          <TabsContent value="url" className="animate-slide-in">
-            <Card className="analysis-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Globe className="w-5 h-5 text-primary" />
-                  Analyze Website by URL
-                </CardTitle>
-                <CardDescription>
-                  Scrape and analyze a live website to generate interactive learning elements
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Tabs defaultValue="url" className="w-full">
+                <TabsList className="grid w-full grid-cols-2 bg-white/10">
+                  <TabsTrigger value="url" className="data-[state=active]:bg-white/20">
+                    <Globe className="h-4 w-4 mr-2" />
+                    Website URL
+                  </TabsTrigger>
+                  <TabsTrigger value="github" className="data-[state=active]:bg-white/20">
+                    <Github className="h-4 w-4 mr-2" />
+                    GitHub Repo
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="url" className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Project Name</label>
+                    <Label htmlFor="scrapeUrl" className="text-white">Website URL</Label>
                     <Input
-                      placeholder="My Awesome Website"
-                      value={urlProjectName}
-                      onChange={(e) => setUrlProjectName(e.target.value)}
-                      disabled={isAnalyzing}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Website URL</label>
-                    <Input
+                      id="scrapeUrl"
                       placeholder="https://example.com"
                       value={scrapeUrl}
                       onChange={(e) => setScrapeUrl(e.target.value)}
-                      disabled={isAnalyzing}
+                      className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
+                      disabled={loading}
                     />
                   </div>
-                </div>
-                <Button 
-                  onClick={() => analyzeProject('url')}
-                  disabled={!urlProjectName || !scrapeUrl || isAnalyzing}
-                  className="w-full glow-button"
-                  size="lg"
-                >
-                  {isAnalyzing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Analyzing...
-                    </>
-                  ) : (
-                    <>
-                      Analyze Website
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </>
-                  )}
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                  <Button 
+                    onClick={() => handleSubmit('url')}
+                    disabled={loading}
+                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Analyzing Website...
+                      </>
+                    ) : (
+                      <>
+                        <Globe className="mr-2 h-4 w-4" />
+                        Analyze Website
+                      </>
+                    )}
+                  </Button>
+                </TabsContent>
 
-          <TabsContent value="github" className="animate-slide-in">
-            <Card className="analysis-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Github className="w-5 h-5 text-primary" />
-                  Analyze GitHub Repository
-                </CardTitle>
-                <CardDescription>
-                  Clone and analyze a GitHub repository to understand the codebase structure
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <TabsContent value="github" className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Project Name</label>
+                    <Label htmlFor="githubUrl" className="text-white">GitHub Repository URL</Label>
                     <Input
-                      placeholder="React Dashboard"
-                      value={githubProjectName}
-                      onChange={(e) => setGithubProjectName(e.target.value)}
-                      disabled={isAnalyzing}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">GitHub Repository URL</label>
-                    <Input
-                      placeholder="https://github.com/user/repo"
+                      id="githubUrl"
+                      placeholder="https://github.com/username/repository"
                       value={githubUrl}
                       onChange={(e) => setGithubUrl(e.target.value)}
-                      disabled={isAnalyzing}
+                      className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
+                      disabled={loading}
                     />
                   </div>
-                </div>
-                <Button 
-                  onClick={() => analyzeProject('github')}
-                  disabled={!githubProjectName || !githubUrl || isAnalyzing}
-                  className="w-full glow-button"
-                  size="lg"
-                >
-                  {isAnalyzing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Analyzing...
-                    </>
-                  ) : (
-                    <>
-                      Analyze Repository
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </>
-                  )}
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                  <Button 
+                    onClick={() => handleSubmit('github')}
+                    disabled={loading}
+                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Analyzing Repository...
+                      </>
+                    ) : (
+                      <>
+                        <Github className="mr-2 h-4 w-4" />
+                        Analyze Repository
+                      </>
+                    )}
+                  </Button>
+                </TabsContent>
+              </Tabs>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Projects List */}
-        <ProjectsList 
-          onProjectSelect={setSelectedProjectId}
-          refreshTrigger={refreshTrigger} 
-        />
+        <ProjectsList key={refreshKey} />
       </div>
     </div>
   );
 };
-
-export default Dashboard;
