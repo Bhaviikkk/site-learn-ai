@@ -1,18 +1,6 @@
 
-import { dbOperations } from './database';
-import { analyzeProject } from './analysis-service';
-import crypto from 'crypto';
-
-export interface Project {
-  id: number;
-  projectName: string;
-  apiKey: string;
-  githubUrl?: string;
-  scrapeUrl?: string;
-  functionMap: Record<string, string>;
-  createdAt: string;
-  updatedAt: string;
-}
+import { mockStorage, generateApiKey, mockAnalyzeProject, addActivity } from './mock-data';
+import type { Project } from './mock-data';
 
 export interface CreateProjectRequest {
   projectName: string;
@@ -39,43 +27,36 @@ export const createProject = async (request: CreateProjectRequest): Promise<ApiR
       return { success: false, error: 'Either scrapeUrl or githubUrl is required' };
     }
 
-    // Generate unique API key
-    const apiKey = 'learn_' + crypto.randomBytes(16).toString('hex');
-
-    // Analyze the project
-    const analysisResult = await analyzeProject(projectName, githubUrl, scrapeUrl);
+    // Analyze the project using mock analysis
+    const analysisResult = await mockAnalyzeProject(projectName, githubUrl, scrapeUrl);
 
     if (!analysisResult.success) {
       return { success: false, error: analysisResult.error };
     }
 
-    // Save to database
-    const projectId = dbOperations.createProject({
+    // Create new project
+    const projects = mockStorage.getProjects();
+    const apiKey = generateApiKey();
+    const now = new Date().toISOString();
+
+    const newProject: Project = {
+      id: mockStorage.getNextId(),
       projectName,
       apiKey,
       githubUrl,
       scrapeUrl,
-      functionMap: analysisResult.functionMap
-    });
+      functionMap: analysisResult.functionMap,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    projects.unshift(newProject);
+    mockStorage.saveProjects(projects);
 
     // Log activity
-    dbOperations.logActivity(projectId as number, 'Project created');
+    addActivity(newProject.id, projectName, 'Project created');
 
-    const project = dbOperations.getProjectById(projectId as number);
-
-    return {
-      success: true,
-      data: {
-        id: project.id,
-        projectName: project.project_name,
-        apiKey: project.api_key,
-        githubUrl: project.github_url,
-        scrapeUrl: project.scrape_url,
-        functionMap: project.function_map,
-        createdAt: project.created_at,
-        updatedAt: project.updated_at
-      }
-    };
+    return { success: true, data: newProject };
 
   } catch (error) {
     console.error('Project creation error:', error);
@@ -85,21 +66,8 @@ export const createProject = async (request: CreateProjectRequest): Promise<ApiR
 
 export const getAllProjects = (): ApiResponse<Project[]> => {
   try {
-    const projects = dbOperations.getAllProjects();
-    
-    return {
-      success: true,
-      data: projects.map(project => ({
-        id: project.id,
-        projectName: project.project_name,
-        apiKey: project.api_key,
-        githubUrl: project.github_url,
-        scrapeUrl: project.scrape_url,
-        functionMap: project.function_map,
-        createdAt: project.created_at,
-        updatedAt: project.updated_at
-      }))
-    };
+    const projects = mockStorage.getProjects();
+    return { success: true, data: projects };
   } catch (error) {
     console.error('Failed to fetch projects:', error);
     return { success: false, error: 'Failed to fetch projects' };
@@ -108,25 +76,14 @@ export const getAllProjects = (): ApiResponse<Project[]> => {
 
 export const getProjectById = (id: number): ApiResponse<Project> => {
   try {
-    const project = dbOperations.getProjectById(id);
+    const projects = mockStorage.getProjects();
+    const project = projects.find(p => p.id === id);
 
     if (!project) {
       return { success: false, error: 'Project not found' };
     }
 
-    return {
-      success: true,
-      data: {
-        id: project.id,
-        projectName: project.project_name,
-        apiKey: project.api_key,
-        githubUrl: project.github_url,
-        scrapeUrl: project.scrape_url,
-        functionMap: project.function_map,
-        createdAt: project.created_at,
-        updatedAt: project.updated_at
-      }
-    };
+    return { success: true, data: project };
 
   } catch (error) {
     console.error('Failed to fetch project:', error);
@@ -136,11 +93,19 @@ export const getProjectById = (id: number): ApiResponse<Project> => {
 
 export const deleteProject = (id: number): ApiResponse<{ message: string }> => {
   try {
-    const result = dbOperations.deleteProject(id);
+    const projects = mockStorage.getProjects();
+    const projectIndex = projects.findIndex(p => p.id === id);
 
-    if (result.changes === 0) {
+    if (projectIndex === -1) {
       return { success: false, error: 'Project not found' };
     }
+
+    const projectName = projects[projectIndex].projectName;
+    projects.splice(projectIndex, 1);
+    mockStorage.saveProjects(projects);
+
+    // Log activity
+    addActivity(id, projectName, 'Project deleted');
 
     return { success: true, data: { message: 'Project deleted successfully' } };
 
@@ -153,14 +118,14 @@ export const deleteProject = (id: number): ApiResponse<{ message: string }> => {
 // Plugin API
 export const generatePlugin = (apiKey: string): string => {
   try {
-    const project = dbOperations.getProjectByApiKey(apiKey);
+    const projects = mockStorage.getProjects();
+    const project = projects.find(p => p.apiKey === apiKey);
 
     if (!project) {
       return '// Plugin not found';
     }
 
-    // Generate the plugin JavaScript with embedded function map
-    return generatePluginCode(project.function_map);
+    return generatePluginCode(project.functionMap);
 
   } catch (error) {
     console.error('Failed to generate plugin:', error);
@@ -435,14 +400,14 @@ const generatePluginCode = (functionMap: Record<string, string>): string => {
 // Activity API
 export const getActivity = (): ApiResponse<any[]> => {
   try {
-    const activities = dbOperations.getActivity();
+    const activities = mockStorage.getActivities();
     
     return {
       success: true,
       data: activities.map(activity => ({
         id: activity.id,
-        projectId: activity.project_id,
-        projectName: activity.project_name,
+        projectId: activity.projectId,
+        projectName: activity.projectName,
         action: activity.action,
         timestamp: activity.timestamp
       }))
