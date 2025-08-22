@@ -4,16 +4,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
-import { Copy, Globe, Github, Brain, Sparkles, ArrowRight, CheckCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Globe, Github, Brain, Sparkles, ArrowRight, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-
-interface AnalysisResult {
-  apiKey: string;
-  functionMap: Record<string, string>;
-  projectName: string;
-}
+import ProjectsList from './ProjectsList';
+import ProjectDetails from './ProjectDetails';
 
 const Dashboard = () => {
   const [urlProjectName, setUrlProjectName] = useState('');
@@ -21,36 +16,54 @@ const Dashboard = () => {
   const [githubProjectName, setGithubProjectName] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const { toast } = useToast();
 
   const analyzeProject = async (type: 'url' | 'github') => {
     setIsAnalyzing(true);
+    setError(null);
     
     try {
       const payload = type === 'url' 
         ? { projectName: urlProjectName, scrapeUrl }
         : { projectName: githubProjectName, githubUrl };
 
-      const response = await fetch('/api/analyze-project', {
+      const response = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
-      if (!response.ok) throw new Error('Analysis failed');
+      const data = await response.json();
 
-      const result = await response.json();
-      setAnalysisResult(result);
-      
-      toast({
-        title: "Analysis Complete!",
-        description: "Your project has been successfully analyzed and is ready for integration.",
-      });
+      if (data.success) {
+        toast({
+          title: "Analysis Complete!",
+          description: `Project "${data.project.projectName}" has been successfully analyzed.`,
+        });
+        
+        // Clear form
+        if (type === 'url') {
+          setUrlProjectName('');
+          setScrapeUrl('');
+        } else {
+          setGithubProjectName('');
+          setGithubUrl('');
+        }
+        
+        // Refresh projects list
+        setRefreshTrigger(prev => prev + 1);
+      } else {
+        throw new Error(data.error || 'Analysis failed');
+      }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Analysis failed';
+      setError(errorMessage);
       toast({
         title: "Analysis Failed",
-        description: "Please check your inputs and try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -58,17 +71,18 @@ const Dashboard = () => {
     }
   };
 
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    toast({
-      title: "Copied!",
-      description: `${label} copied to clipboard`,
-    });
-  };
-
-  const generateIntegrationCode = (apiKey: string) => {
-    return `<script src="https://your-domain.com/learning-plugin.js" data-api-key="${apiKey}"></script>`;
-  };
+  if (selectedProjectId) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="max-w-6xl mx-auto px-4 py-12 sm:px-6 lg:px-8">
+          <ProjectDetails 
+            projectId={selectedProjectId} 
+            onBack={() => setSelectedProjectId(null)} 
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -93,18 +107,28 @@ const Dashboard = () => {
       </div>
 
       {/* Main Dashboard */}
-      <div className="max-w-6xl mx-auto px-4 py-12 sm:px-6 lg:px-8">
+      <div className="max-w-6xl mx-auto px-4 py-12 sm:px-6 lg:px-8 space-y-12">
+        {/* Create New Project */}
         <Tabs defaultValue="url" className="space-y-8">
-          <TabsList className="grid w-full max-w-md mx-auto grid-cols-2">
-            <TabsTrigger value="url" className="flex items-center gap-2">
-              <Globe className="w-4 h-4" />
-              Website URL
-            </TabsTrigger>
-            <TabsTrigger value="github" className="flex items-center gap-2">
-              <Github className="w-4 h-4" />
-              GitHub Repo
-            </TabsTrigger>
-          </TabsList>
+          <div className="text-center">
+            <h2 className="text-2xl font-bold mb-4">Create New Project</h2>
+            <TabsList className="grid w-full max-w-md mx-auto grid-cols-2">
+              <TabsTrigger value="url" className="flex items-center gap-2">
+                <Globe className="w-4 h-4" />
+                Website URL
+              </TabsTrigger>
+              <TabsTrigger value="github" className="flex items-center gap-2">
+                <Github className="w-4 h-4" />
+                GitHub Repo
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
           <TabsContent value="url" className="animate-slide-in">
             <Card className="analysis-card">
@@ -125,6 +149,7 @@ const Dashboard = () => {
                       placeholder="My Awesome Website"
                       value={urlProjectName}
                       onChange={(e) => setUrlProjectName(e.target.value)}
+                      disabled={isAnalyzing}
                     />
                   </div>
                   <div className="space-y-2">
@@ -133,6 +158,7 @@ const Dashboard = () => {
                       placeholder="https://example.com"
                       value={scrapeUrl}
                       onChange={(e) => setScrapeUrl(e.target.value)}
+                      disabled={isAnalyzing}
                     />
                   </div>
                 </div>
@@ -143,7 +169,10 @@ const Dashboard = () => {
                   size="lg"
                 >
                   {isAnalyzing ? (
-                    "Analyzing..."
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Analyzing...
+                    </>
                   ) : (
                     <>
                       Analyze Website
@@ -174,6 +203,7 @@ const Dashboard = () => {
                       placeholder="React Dashboard"
                       value={githubProjectName}
                       onChange={(e) => setGithubProjectName(e.target.value)}
+                      disabled={isAnalyzing}
                     />
                   </div>
                   <div className="space-y-2">
@@ -182,6 +212,7 @@ const Dashboard = () => {
                       placeholder="https://github.com/user/repo"
                       value={githubUrl}
                       onChange={(e) => setGithubUrl(e.target.value)}
+                      disabled={isAnalyzing}
                     />
                   </div>
                 </div>
@@ -192,7 +223,10 @@ const Dashboard = () => {
                   size="lg"
                 >
                   {isAnalyzing ? (
-                    "Analyzing..."
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Analyzing...
+                    </>
                   ) : (
                     <>
                       Analyze Repository
@@ -205,78 +239,11 @@ const Dashboard = () => {
           </TabsContent>
         </Tabs>
 
-        {/* Analysis Results */}
-        {analysisResult && (
-          <div className="mt-12 animate-fade-in">
-            <div className="text-center mb-8">
-              <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-              <h2 className="text-3xl font-bold mb-2">Analysis Complete!</h2>
-              <p className="text-muted-foreground">
-                Your project "{analysisResult.projectName}" is ready for integration
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* API Key Card */}
-              <Card className="analysis-card">
-                <CardHeader>
-                  <CardTitle>API Key</CardTitle>
-                  <CardDescription>
-                    Use this secure key to integrate the learning plugin
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="font-mono text-xs">
-                      {analysisResult.apiKey}
-                    </Badge>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => copyToClipboard(analysisResult.apiKey, 'API Key')}
-                    >
-                      <Copy className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Integration Script</label>
-                    <Textarea
-                      readOnly
-                      value={generateIntegrationCode(analysisResult.apiKey)}
-                      className="font-mono text-xs"
-                    />
-                    <Button
-                      size="sm"
-                      onClick={() => copyToClipboard(generateIntegrationCode(analysisResult.apiKey), 'Integration Script')}
-                    >
-                      Copy Script Tag
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Function Map Card */}
-              <Card className="analysis-card">
-                <CardHeader>
-                  <CardTitle>Generated Function Map</CardTitle>
-                  <CardDescription>
-                    AI-generated explanations for your website elements
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3 max-h-80 overflow-y-auto">
-                    {Object.entries(analysisResult.functionMap).map(([id, explanation]) => (
-                      <div key={id} className="border-l-2 border-primary pl-4 py-2">
-                        <div className="font-mono text-sm text-primary">{id}</div>
-                        <div className="text-sm text-muted-foreground">{explanation}</div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        )}
+        {/* Projects List */}
+        <ProjectsList 
+          onProjectSelect={setSelectedProjectId}
+          refreshTrigger={refreshTrigger} 
+        />
       </div>
     </div>
   );

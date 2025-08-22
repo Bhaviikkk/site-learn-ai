@@ -1,5 +1,5 @@
 
-import { projectStorage } from './analyze-project';
+import { dbOperations } from '@/lib/database';
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -9,14 +9,14 @@ export async function GET(request: Request) {
     return Response.json({ error: 'API key is required' }, { status: 400 });
   }
 
-  const functionMap = projectStorage.get(apiKey);
+  const project = dbOperations.getProjectByApiKey(apiKey);
 
-  if (!functionMap) {
+  if (!project) {
     return Response.json({ error: 'Invalid API key' }, { status: 404 });
   }
 
   // Set CORS headers for cross-origin requests
-  return Response.json(functionMap, {
+  return Response.json(project.function_map, {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET',
